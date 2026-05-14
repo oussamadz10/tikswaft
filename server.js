@@ -70,49 +70,28 @@ app.post('/process-video', async (req, res) => {
 // ==========================================
 // 2. مسار جلب الصور الجديد 📸
 // ==========================================
-app.post('/process-images', async (req, res) => {
-    console.log("Request received for Image URL:", req.body.tiktokUrl);
-
-    const { tiktokUrl } = req.body;
-
-    try {
-        const response = await axios.get(`https://www.tikwm.com/api/?url=${tiktokUrl}`);
-        const data = response.data.data;
-
-        if (!data || !data.images || data.images.length === 0) {
-            return res.status(400).json({ error: "هذا الرابط لا يحتوي على صور، يبدو أنه فيديو عادي." });
-        }
-
-        console.log(`✅ تم جلب ${data.images.length} صور من الرابط.`);
-        res.json({ images: data.images });
-
-    } catch (error) {
-        console.error("❌ Server Error (Images):", error.message);
-        res.status(500).json({ error: "حدث خطأ في السيرفر أثناء جلب الصور." });
-    }
-});
-// ==========================================
-// 3. مسار إجبار المتصفح على تحميل الصورة
-// ==========================================
 app.post('/download-image', async (req, res) => {
     const { imageUrl, index } = req.body;
 
     try {
-        // جلب الصورة كبث مباشر (Stream)
-        const imageStream = await axios({
+        const imageResponse = await axios({
             method: 'get',
             url: imageUrl,
-            responseType: 'stream'
+            responseType: 'stream',
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/114.0.0.0 Safari/537.36',
+                'Referer': 'https://www.tiktok.com/' // ضروري أحياناً لتجاوز الحماية
+            }
         });
 
-        // إخبار المتصفح بأن هذا ملف يجب تحميله وليس عرضه
-        res.header('Content-Disposition', `attachment; filename="tiktok_image_${index}.jpg"`);
+        // إخبار المتصفح بنوع الملف واسمه
+        res.setHeader('Content-Type', 'image/jpeg');
+        res.setHeader('Content-Disposition', `attachment; filename="tikswaft_img_${index || Date.now()}.jpg"`);
 
-        // ضخ الصورة للمتصفح
-        imageStream.data.pipe(res);
+        imageResponse.data.pipe(res);
     } catch (error) {
-        console.error("❌ Error downloading image:", error.message);
-        res.status(500).send("حدث خطأ أثناء تحميل الصورة");
+        console.error("❌ Image Download Error:", error.message);
+        res.status(500).send("Failed to download image");
     }
 });
 // ==========================================
