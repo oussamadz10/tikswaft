@@ -153,32 +153,45 @@ app.post('/process-audio', async (req, res) => {
 // أضف هذا الكود بعد الـ app.use وقبل app.listen
 app.post('/mute-video', async (req, res) => {
     const { tiktokUrl } = req.body;
-
-    if (!tiktokUrl) {
-        return res.status(400).send("URL is required");
-    }
+    if (!tiktokUrl) return res.status(400).send("URL is required");
 
     try {
+        console.log("⏳ Start processing for:", tiktokUrl);
         const response = await axios.get(`https://www.tikwm.com/api/?url=${tiktokUrl}`);
         const videoUrl = response.data.data.play;
 
-        if (!videoUrl) return res.status(400).send("Failed to get video from TikTok");
+        if (!videoUrl) return res.status(400).send("Video not found");
 
-        // إرسال الفيدو للسيرفر ليقوم بكتمه
-        res.setHeader('Content-Disposition', 'attachment; filename="muted_video.mp4"');
+        // 1. جلب الفيديو كـ Stream
+        const videoStream = await axios({
+            method: 'get',
+            url: videoUrl,
+            responseType: 'stream'
+        });
 
-        ffmpeg(videoUrl)
-            .outputOptions('-an') // هذا الأمر هو الذي يكتم الصوت
+        // 2. إعدادات الـ Headers
+        res.setHeader('Content-Type', 'video/mp4');
+        res.setHeader('Content-Disposition', 'attachment; filename="tikswaft-muted.mp4"');
+
+        // 3. المعالجة باستخدام FFmpeg (الإعدادات الذهبية)
+        ffmpeg(videoStream.data)
+            .noAudio() // كتم الصوت
             .format('mp4')
+            .outputOptions([
+                '-movflags frag_keyframe+empty_moov', // ضروري جداً للبث المباشر
+                '-preset ultrafast' // لجعل المعالجة سريعة جداً على Render
+            ])
+            .on('start', () => console.log('🎬 Processing started...'))
             .on('error', (err) => {
-                console.error('FFmpeg Error:', err);
-                if (!res.headersSent) res.status(500).send("Processing error");
+                console.error('❌ FFmpeg Error:', err.message);
+                if (!res.headersSent) res.status(500).send("Error processing video");
             })
-            .pipe(res, { end: true });
+            .on('end', () => console.log('✅ Processing finished!'))
+            .pipe(res, { end: true }); // ضخ الفيديو للمتصفح
 
     } catch (error) {
-        console.error("Server Error:", error);
-        res.status(500).send("Internal Server Error");
+        console.error("❌ Global Error:", error.message);
+        if (!res.headersSent) res.status(500).send("Server Error");
     }
 });
 // البحث عن المنفذ الذي توفره الاستضافة، أو استخدام 3000 إذا كنت تعمل محلياً
