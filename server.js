@@ -149,5 +149,41 @@ app.post('/process-audio', async (req, res) => {
         res.status(500).send("فشل في تحميل الصوت.");
     }
 });
-// تشغيل السيرفر
-app.listen(3000, () => console.log('🚀 Super Server running on http://localhost:3000'));
+// --- أداة كتم الصوت ---
+// أضف هذا الكود بعد الـ app.use وقبل app.listen
+app.post('/mute-video', async (req, res) => {
+    const { tiktokUrl } = req.body;
+
+    if (!tiktokUrl) {
+        return res.status(400).send("URL is required");
+    }
+
+    try {
+        const response = await axios.get(`https://www.tikwm.com/api/?url=${tiktokUrl}`);
+        const videoUrl = response.data.data.play;
+
+        if (!videoUrl) return res.status(400).send("Failed to get video from TikTok");
+
+        // إرسال الفيدو للسيرفر ليقوم بكتمه
+        res.setHeader('Content-Disposition', 'attachment; filename="muted_video.mp4"');
+
+        ffmpeg(videoUrl)
+            .outputOptions('-an') // هذا الأمر هو الذي يكتم الصوت
+            .format('mp4')
+            .on('error', (err) => {
+                console.error('FFmpeg Error:', err);
+                if (!res.headersSent) res.status(500).send("Processing error");
+            })
+            .pipe(res, { end: true });
+
+    } catch (error) {
+        console.error("Server Error:", error);
+        res.status(500).send("Internal Server Error");
+    }
+});
+// البحث عن المنفذ الذي توفره الاستضافة، أو استخدام 3000 إذا كنت تعمل محلياً
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, () => {
+    console.log(`🚀 TikSwaft Server is running on port ${PORT}`);
+});
