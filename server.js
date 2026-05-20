@@ -3,6 +3,8 @@ const cors = require('cors');
 const axios = require('axios');
 const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
 const ffmpeg = require('fluent-ffmpeg');
+const fs = require('fs');
+const path = require('path');
 
 const app = express();
 app.use(cors());
@@ -11,12 +13,20 @@ app.use(express.static('public'));
 
 ffmpeg.setFfmpegPath(ffmpegPath);
 
+// دالة مساعدة لحذف الملفات المؤقتة لتنظيف الذاكرة دائماً
+function cleanupFiles(files) {
+    files.forEach(file => {
+        if (fs.existsSync(file)) {
+            try { fs.unlinkSync(file); } catch (e) { console.error("Error deleting file:", e.message); }
+        }
+    });
+}
+
 // ==========================================
-// 1. مسار معالجة الفيديوهات (كتم وقص)
+// 1. مسار معالجة الفيديوهات العام (قص)
 // ==========================================
 app.post('/process-video', async (req, res) => {
     console.log("Request received for Video URL:", req.body.tiktokUrl);
-
     const { tiktokUrl, action, startTime, duration } = req.body;
 
     try {
@@ -35,7 +45,7 @@ app.post('/process-video', async (req, res) => {
             method: 'get',
             url: videoLink,
             responseType: 'stream',
-            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/114.0.0.0 Safari/537.36' }
+            headers: { 'User-Agent': 'Mozilla/5.0' }
         });
 
         let command = ffmpeg(videoStream.data);
@@ -54,7 +64,7 @@ app.post('/process-video', async (req, res) => {
         command
             .toFormat('mp4')
             .outputOptions('-movflags frag_keyframe+empty_moov')
-            .on('start', () => console.log('⏳ جاري معالجة الفيديو...'))
+            .on('start', () => console.log('⏳ جاري معالجة الفيديو العام...'))
             .on('error', (err) => {
                 console.error('❌ تفاصيل خطأ المحرك:', err.message);
                 if (!res.headersSent) res.status(500).send("حدث خطأ أثناء المعالجة");
@@ -68,7 +78,7 @@ app.post('/process-video', async (req, res) => {
 });
 
 // ==========================================
-// 2. مسار جلب الصور الجديد 📸
+// 2. مسار تحميل الصور 📸
 // ==========================================
 app.post('/download-image', async (req, res) => {
     const { imageUrl, index } = req.body;
@@ -80,11 +90,10 @@ app.post('/download-image', async (req, res) => {
             responseType: 'stream',
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/114.0.0.0 Safari/537.36',
-                'Referer': 'https://www.tiktok.com/' // ضروري أحياناً لتجاوز الحماية
+                'Referer': 'https://www.tiktok.com/'
             }
         });
 
-        // إخبار المتصفح بنوع الملف واسمه
         res.setHeader('Content-Type', 'image/jpeg');
         res.setHeader('Content-Disposition', `attachment; filename="tikswaft_img_${index || Date.now()}.jpg"`);
 
@@ -94,8 +103,9 @@ app.post('/download-image', async (req, res) => {
         res.status(500).send("Failed to download image");
     }
 });
+
 // ==========================================
-// 4. مسار استخراج وتحميل الصوت (MP3) 🎵
+// 3. مسار استخراج وتحميل الصوت (MP3) 🎵
 // ==========================================
 app.post('/process-audio', async (req, res) => {
     const { tiktokUrl } = req.body;
@@ -117,7 +127,6 @@ app.post('/process-audio', async (req, res) => {
             headers: { 'User-Agent': 'Mozilla/5.0' }
         });
 
-        // إعدادات إجبار التحميل كـ MP3
         res.setHeader('Content-Type', 'audio/mpeg');
         res.setHeader('Content-Disposition', 'attachment; filename="tiktok_audio.mp3"');
 
@@ -128,54 +137,60 @@ app.post('/process-audio', async (req, res) => {
         res.status(500).send("فشل في تحميل الصوت.");
     }
 });
-// --- أداة كتم الصوت ---
-// أضف هذا الكود بعد الـ app.use وقبل app.listen
+
+// ==========================================
+// 4. أداة كتم الصوت الاحترافية (حل مشكلة الـ Stream Closed) 🛠️
+// ==========================================
 app.post('/mute-video', async (req, res) => {
     const { tiktokUrl } = req.body;
     if (!tiktokUrl) return res.status(400).send("URL is required");
 
+    const inputPath = path.join(__dirname, `input_${Date.now()}.mp4`);
+    const outputPath = path.join(__dirname, `output_${Date.now()}.mp4`);
+
     try {
-        console.log("⏳ Start processing for:", tiktokUrl);
+        console.log("⏳ 1. جلب رابط الفيديو من تيك توك...");
         const response = await axios.get(`https://www.tikwm.com/api/?url=${tiktokUrl}`);
         const videoUrl = response.data.data.play;
-
         if (!videoUrl) return res.status(400).send("Video not found");
 
-        // 1. جلب الفيديو كـ Stream
-        const videoStream = await axios({
-            method: 'get',
-            url: videoUrl,
-            responseType: 'stream'
+        console.log("⏳ 2. حفظ الفيديو مؤقتاً في السيرفر لحماية الذاكرة...");
+        const writer = fs.createWriteStream(inputPath);
+        const videoStream = await axios({ method: 'get', url: videoUrl, responseType: 'stream' });
+        videoStream.data.pipe(writer);
+
+        await new Promise((resolve, reject) => {
+            writer.on('finish', resolve);
+            writer.on('error', reject);
         });
 
-        // 2. إعدادات الـ Headers
-        res.setHeader('Content-Type', 'video/mp4');
-        res.setHeader('Content-Disposition', 'attachment; filename="tikswaft-muted.mp4"');
-
-        // 3. المعالجة باستخدام FFmpeg (الإعدادات الذهبية)
-        ffmpeg(videoStream.data)
-            .noAudio() // كتم الصوت
+        console.log("⏳ 3. بدء عملية كتم الصوت عبر FFmpeg...");
+        ffmpeg(inputPath)
+            .outputOptions('-an')
             .format('mp4')
-            .outputOptions([
-                '-movflags frag_keyframe+empty_moov', // ضروري جداً للبث المباشر
-                '-preset ultrafast' // لجعل المعالجة سريعة جداً على Render
-            ])
-            .on('start', () => console.log('🎬 Processing started...'))
+            .on('start', () => console.log('🎬 جاري معالجة كتم الصوت...'))
             .on('error', (err) => {
-                console.error('❌ FFmpeg Error:', err.message);
+                console.error('❌ خطأ FFmpeg:', err.message);
+                cleanupFiles([inputPath, outputPath]);
                 if (!res.headersSent) res.status(500).send("Error processing video");
             })
-            .on('end', () => console.log('✅ Processing finished!'))
-            .pipe(res, { end: true }); // ضخ الفيديو للمتصفح
+            .on('end', () => {
+                console.log('✅ انتهت المعالجة! جاري بدء التنزيل للمستخدم...');
+                res.download(outputPath, 'tikswaft-muted.mp4', (err) => {
+                    cleanupFiles([inputPath, outputPath]);
+                });
+            })
+            .save(outputPath);
 
     } catch (error) {
-        console.error("❌ Global Error:", error.message);
+        console.error("❌ خطأ عام في الكتم:", error.message);
+        cleanupFiles([inputPath, outputPath]);
         if (!res.headersSent) res.status(500).send("Server Error");
     }
 });
-// البحث عن المنفذ الذي توفره الاستضافة، أو استخدام 3000 إذا كنت تعمل محلياً
-const PORT = process.env.PORT || 3000;
 
+// إعداد منفذ خادم الويب
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`🚀 TikSwaft Server is running on port ${PORT}`);
 });
