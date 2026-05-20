@@ -13,7 +13,7 @@ app.use(express.static('public'));
 
 ffmpeg.setFfmpegPath(ffmpegPath);
 
-// دالة مساعدة لحذف الملفات المؤقتة لتنظيف الذاكرة دائماً
+// دالة مساعدة لحذف الملفات المؤقتة
 function cleanupFiles(files) {
     files.forEach(file => {
         if (fs.existsSync(file)) {
@@ -23,7 +23,7 @@ function cleanupFiles(files) {
 }
 
 // ==========================================
-// 1. مسار معالجة الفيديوهات العام (قص)
+// 1. مسار معالجة الفيديوهات العام (قص) - متوافق مع الهواتف
 // ==========================================
 app.post('/process-video', async (req, res) => {
     console.log("Request received for Video URL:", req.body.tiktokUrl);
@@ -59,7 +59,10 @@ app.post('/process-video', async (req, res) => {
             ]);
         }
 
-        res.header('Content-Disposition', 'attachment; filename="tiktok_processed.mp4"');
+        const fileName = `tiktok_processed_${Date.now()}.mp4`;
+        res.setHeader('Content-Type', 'video/mp4');
+        res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+        res.setHeader('Accept-Ranges', 'bytes');
 
         command
             .toFormat('mp4')
@@ -139,7 +142,7 @@ app.post('/process-audio', async (req, res) => {
 });
 
 // ==========================================
-// 4. أداة كتم الصوت الاحترافية (حل مشكلة الـ Stream Closed) 🛠️
+// 4. أداة كتم الصوت الاحترافية - متوافقة مع الهواتف
 // ==========================================
 app.post('/mute-video', async (req, res) => {
     const { tiktokUrl } = req.body;
@@ -154,7 +157,7 @@ app.post('/mute-video', async (req, res) => {
         const videoUrl = response.data.data.play;
         if (!videoUrl) return res.status(400).send("Video not found");
 
-        console.log("⏳ 2. حفظ الفيديو مؤقتاً في السيرفر لحماية الذاكرة...");
+        console.log("⏳ 2. حفظ الفيديو مؤقتاً في السيرفر...");
         const writer = fs.createWriteStream(inputPath);
         const videoStream = await axios({ method: 'get', url: videoUrl, responseType: 'stream' });
         videoStream.data.pipe(writer);
@@ -175,8 +178,16 @@ app.post('/mute-video', async (req, res) => {
                 if (!res.headersSent) res.status(500).send("Error processing video");
             })
             .on('end', () => {
-                console.log('✅ انتهت المعالجة! جاري بدء التنزيل للمستخدم...');
-                res.download(outputPath, 'tikswaft-muted.mp4', (err) => {
+                console.log('✅ انتهت المعالجة!');
+                const fileName = `tikswaft_muted_${Date.now()}.mp4`;
+                res.setHeader('Content-Type', 'video/mp4');
+                res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+                res.setHeader('Accept-Ranges', 'bytes');
+
+                const fileStream = fs.createReadStream(outputPath);
+                fileStream.pipe(res);
+
+                fileStream.on('end', () => {
                     cleanupFiles([inputPath, outputPath]);
                 });
             })
@@ -189,8 +200,267 @@ app.post('/mute-video', async (req, res) => {
     }
 });
 
+// ==========================================
+// 5. مسار جديد للتحميل المباشر (بدون معالجة) - أفضل للهواتف
+// ==========================================
+app.post('/download-video', async (req, res) => {
+    const { tiktokUrl } = req.body;
+
+    try {
+        console.log("⏳ تحميل مباشر للفيديو...");
+        const response = await axios.get(`https://www.tikwm.com/api/?url=${tiktokUrl}`);
+
+        if (!response.data || !response.data.data || !response.data.data.play) {
+            throw new Error("لم يتم العثور على الفيديو");
+        }
+
+        let videoLink = response.data.data.play;
+        if (!videoLink.startsWith('http')) {
+            videoLink = 'https://www.tikwm.com' + videoLink;
+        }
+
+        const videoResponse = await axios({
+            method: 'get',
+            url: videoLink,
+            responseType: 'stream',
+            headers: {
+                'User-Agent': 'Mozilla/5.0',
+                'Referer': 'https://www.tiktok.com/'
+            }
+        });
+
+        const fileName = `tikswaft_${Date.now()}.mp4`;
+        res.setHeader('Content-Type', 'video/mp4');
+        res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+        res.setHeader('Accept-Ranges', 'bytes');
+
+        videoResponse.data.pipe(res);
+
+    } catch (error) {
+        console.error("❌ خطأ في التحميل:", error.message);
+        res.status(500).send("فشل في تحميل الفيديو");
+    }
+});
+
+// ==========================================
+// 6. صفحة بسيطة للهواتف (مضمنة في الكود)
+// ==========================================
+app.get('/mobile', (req, res) => {
+    res.send(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>TikSwaft - تحميل فيديوهات تيك توك</title>
+            <style>
+                * { margin: 0; padding: 0; box-sizing: border-box; }
+                body {
+                    font-family: Arial, sans-serif;
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    min-height: 100vh;
+                    padding: 20px;
+                }
+                .container {
+                    max-width: 500px;
+                    margin: 0 auto;
+                    background: white;
+                    border-radius: 20px;
+                    padding: 30px 20px;
+                    box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+                }
+                h1 { text-align: center; color: #667eea; margin-bottom: 10px; }
+                p { text-align: center; color: #666; margin-bottom: 30px; }
+                input {
+                    width: 100%;
+                    padding: 15px;
+                    border: 2px solid #e0e0e0;
+                    border-radius: 10px;
+                    font-size: 16px;
+                    margin-bottom: 20px;
+                }
+                button {
+                    width: 100%;
+                    padding: 15px;
+                    margin-bottom: 10px;
+                    border: none;
+                    border-radius: 10px;
+                    font-size: 16px;
+                    font-weight: bold;
+                    cursor: pointer;
+                    transition: transform 0.2s;
+                    color: white;
+                }
+                button:active { transform: scale(0.98); }
+                .btn-primary { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+                .btn-secondary { background: #48bb78; }
+                .btn-audio { background: #4299e1; }
+                .loading {
+                    display: none;
+                    text-align: center;
+                    padding: 20px;
+                }
+                .spinner {
+                    width: 40px;
+                    height: 40px;
+                    border: 4px solid #f3f3f3;
+                    border-top: 4px solid #667eea;
+                    border-radius: 50%;
+                    animation: spin 1s linear infinite;
+                    margin: 0 auto;
+                }
+                @keyframes spin {
+                    0% { transform: rotate(0deg); }
+                    100% { transform: rotate(360deg); }
+                }
+                .message {
+                    padding: 15px;
+                    border-radius: 10px;
+                    margin-top: 20px;
+                    display: none;
+                }
+                .message.success { background: #d4edda; color: #155724; display: block; }
+                .message.error { background: #f8d7da; color: #721c24; display: block; }
+                .info {
+                    text-align: center;
+                    margin-top: 20px;
+                    font-size: 12px;
+                    color: #999;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h1>🎵 TikSwaft</h1>
+                <p>تحميل فيديوهات تيك توك</p>
+                <input type="text" id="url" placeholder="أدخل رابط تيك توك هنا...">
+                <button class="btn-primary" onclick="downloadVideo()">📥 تحميل فيديو</button>
+                <button class="btn-secondary" onclick="downloadMuted()">🔇 تحميل بدون صوت</button>
+                <button class="btn-audio" onclick="downloadAudio()">🎵 تحميل الصوت فقط</button>
+                <div class="loading" id="loading">
+                    <div class="spinner"></div>
+                    <p>جاري التحميل...</p>
+                </div>
+                <div class="message" id="message"></div>
+                <div class="info">💡 اضغط مع الاستمرار على زر التحميل ثم اختر "حفظ الرابط"</div>
+            </div>
+
+            <script>
+                async function downloadVideo() {
+                    const url = document.getElementById('url').value;
+                    if (!url) {
+                        showMessage('الرجاء إدخال رابط تيك توك', 'error');
+                        return;
+                    }
+                    showLoading(true);
+                    try {
+                        const response = await fetch('/download-video', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ tiktokUrl: url })
+                        });
+                        if (!response.ok) throw new Error('فشل التحميل');
+                        const blob = await response.blob();
+                        const downloadUrl = window.URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = downloadUrl;
+                        a.download = 'tikswaft_video.mp4';
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        window.URL.revokeObjectURL(downloadUrl);
+                        showMessage('✅ تم التحميل بنجاح!', 'success');
+                    } catch (error) {
+                        showMessage('❌ فشل التحميل: ' + error.message, 'error');
+                    } finally {
+                        showLoading(false);
+                    }
+                }
+
+                async function downloadMuted() {
+                    const url = document.getElementById('url').value;
+                    if (!url) {
+                        showMessage('الرجاء إدخال رابط تيك توك', 'error');
+                        return;
+                    }
+                    showLoading(true);
+                    try {
+                        const response = await fetch('/mute-video', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ tiktokUrl: url })
+                        });
+                        if (!response.ok) throw new Error('فشل التحميل');
+                        const blob = await response.blob();
+                        const downloadUrl = window.URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = downloadUrl;
+                        a.download = 'tikswaft_muted.mp4';
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        window.URL.revokeObjectURL(downloadUrl);
+                        showMessage('✅ تم تحميل الفيديو بدون صوت!', 'success');
+                    } catch (error) {
+                        showMessage('❌ فشل التحميل', 'error');
+                    } finally {
+                        showLoading(false);
+                    }
+                }
+
+                async function downloadAudio() {
+                    const url = document.getElementById('url').value;
+                    if (!url) {
+                        showMessage('الرجاء إدخال رابط تيك توك', 'error');
+                        return;
+                    }
+                    showLoading(true);
+                    try {
+                        const response = await fetch('/process-audio', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ tiktokUrl: url })
+                        });
+                        if (!response.ok) throw new Error('فشل التحميل');
+                        const blob = await response.blob();
+                        const downloadUrl = window.URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = downloadUrl;
+                        a.download = 'tikswaft_audio.mp3';
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        window.URL.revokeObjectURL(downloadUrl);
+                        showMessage('✅ تم تحميل الصوت!', 'success');
+                    } catch (error) {
+                        showMessage('❌ فشل تحميل الصوت', 'error');
+                    } finally {
+                        showLoading(false);
+                    }
+                }
+
+                function showLoading(show) {
+                    document.getElementById('loading').style.display = show ? 'block' : 'none';
+                }
+
+                function showMessage(msg, type) {
+                    const msgDiv = document.getElementById('message');
+                    msgDiv.textContent = msg;
+                    msgDiv.className = 'message ' + type;
+                    setTimeout(() => {
+                        msgDiv.className = 'message';
+                        msgDiv.style.display = 'none';
+                    }, 3000);
+                }
+            </script>
+        </body>
+        </html>
+    `);
+});
+
 // إعداد منفذ خادم الويب
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 TikSwaft Server is running on port ${PORT}`);
+    console.log(`📱 افتح على هاتفك: http://YOUR_IP:${PORT}/mobile`);
 });
