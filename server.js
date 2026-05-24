@@ -458,3 +458,71 @@ app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 TikSwaft Server is running on port ${PORT}`);
     console.log(`📱 افتح على هاتفك: http://YOUR_IP:${PORT}/mobile`);
 });
+// ==========================================
+// 🚀 مسار كتم الصوت المباشر للهواتف (GET Stream)
+// ==========================================
+app.get('/mute-video-direct', async (req, res) => {
+    const { tiktokUrl } = req.query;
+    if (!tiktokUrl) return res.status(400).send("URL is required");
+
+    const inputPath = path.join(__dirname, `input_${Date.now()}.mp4`);
+    const outputPath = path.join(__dirname, `output_${Date.now()}.mp4`);
+
+    try {
+        const response = await axios.get(`https://www.tikwm.com/api/?url=${encodeURIComponent(tiktokUrl)}`);
+        const videoUrl = response.data.data.play;
+        if (!videoUrl) return res.status(400).send("Video not found");
+
+        // حفظ الملف مؤقتاً لعمل معالجة سريعة بدون لاغ
+        const writer = fs.createWriteStream(inputPath);
+        const videoStream = await axios({ method: 'get', url: videoUrl, responseType: 'stream' });
+        videoStream.data.pipe(writer);
+
+        await new Promise((resolve, reject) => {
+            writer.on('finish', resolve);
+            writer.on('error', reject);
+        });
+
+        // إرسال الهيدر للأندرويد لبدء التحميل الفوري في الخلفية
+        res.setHeader('Content-Type', 'video/mp4');
+        res.setHeader('Content-Disposition', 'attachment; filename="tikswaft-muted.mp4"');
+
+        ffmpeg(inputPath)
+            .outputOptions(['-an', '-c:v copy']) // كتم فوري بدون إعادة ترميز
+            .on('error', (err) => {
+                cleanupFiles([inputPath, outputPath]);
+                if (!res.headersSent) res.status(500).send("Error");
+            })
+            .on('end', () => {
+                res.download(outputPath, 'tikswaft-muted.mp4', () => {
+                    cleanupFiles([inputPath, outputPath]);
+                });
+            })
+            .save(outputPath);
+
+    } catch (error) {
+        cleanupFiles([inputPath, outputPath]);
+        if (!res.headersSent) res.status(500).send("Server Error");
+    }
+});
+
+// ==========================================
+// 🚀 مسار تحميل الصوت المباشر للهواتف (GET Stream)
+// ==========================================
+app.get('/audio-direct', async (req, res) => {
+    const { tiktokUrl } = req.query;
+    try {
+        const response = await axios.get(`https://www.tikwm.com/api/?url=${encodeURIComponent(tiktokUrl)}`);
+        const audioLink = response.data.data.music;
+
+        if (!audioLink) return res.status(400).send("Audio not found");
+
+        res.setHeader('Content-Type', 'audio/mpeg');
+        res.setHeader('Content-Disposition', 'attachment; filename="tikswaft_audio.mp3"');
+
+        const audioStream = await axios({ method: 'get', url: audioLink, responseType: 'stream' });
+        audioStream.data.pipe(res);
+    } catch (error) {
+        res.status(500).send("Error fetching audio");
+    }
+});
