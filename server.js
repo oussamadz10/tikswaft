@@ -167,27 +167,21 @@ app.post('/mute-video', async (req, res) => {
             writer.on('error', reject);
         });
 
-        console.log("⏳ 3. بدء عملية كتم الصوت عبر FFmpeg...");
+        console.log("⏳ 3. بدء عملية كتم الصوت الصاروخية عبر Stream Copy...");
         ffmpeg(inputPath)
-            .outputOptions('-an')
-            .format('mp4')
-            .on('start', () => console.log('🎬 جاري معالجة كتم الصوت...'))
+            .outputOptions([
+                '-an',          // إلغاء الصوت تماماً
+                '-c:v copy'     // نسخ وسم الفيديو الأصلي مباشرة بدون إعادة ترميز لتوفير الوقت
+            ])
+            .on('start', () => console.log('🎬 جاري معالجة كتم الصوت الفوري...'))
             .on('error', (err) => {
                 console.error('❌ خطأ FFmpeg:', err.message);
                 cleanupFiles([inputPath, outputPath]);
                 if (!res.headersSent) res.status(500).send("Error processing video");
             })
             .on('end', () => {
-                console.log('✅ انتهت المعالجة!');
-                const fileName = `tikswaft_muted_${Date.now()}.mp4`;
-                res.setHeader('Content-Type', 'video/mp4');
-                res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
-                res.setHeader('Accept-Ranges', 'bytes');
-
-                const fileStream = fs.createReadStream(outputPath);
-                fileStream.pipe(res);
-
-                fileStream.on('end', () => {
+                console.log('✅ انتهت المعالجة في لحظات! جاري بدء التنزيل للمستخدم...');
+                res.download(outputPath, 'tikswaft-muted.mp4', (err) => {
                     cleanupFiles([inputPath, outputPath]);
                 });
             })
