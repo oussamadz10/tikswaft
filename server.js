@@ -159,21 +159,65 @@ app.get('/mute-video-direct', async (req, res) => {
     }
 });
 
-app.get('/audio-direct', async (req, res) => {
+app.get('/mute-video-direct', async (req, res) => {
     const { tiktokUrl } = req.query;
     if (!tiktokUrl) return res.status(400).send("URL is required");
+
+    // إنشاء مسارات فريدة للملفات لتجنب التداخل
+    const uniqueId = Date.now();
+    const inputPath = path.join(__dirname, `input_direct_${uniqueId}.mp4`);
+    const outputPath = path.join(__dirname, `output_direct_${uniqueId}.mp4`);
+
     try {
+        console.log("⏳ جلب رابط الفيديو من تيك توك...");
         const response = await axios.get(`https://www.tikwm.com/api/?url=${encodeURIComponent(tiktokUrl)}`);
-        const audioLink = response.data.data.music;
-        if (!audioLink) return res.status(400).send("Audio not found");
 
-        res.setHeader('Content-Type', 'audio/mpeg');
-        res.setHeader('Content-Disposition', 'attachment; filename="tikswaft_audio.mp3"');
+        if (!response.data || !response.data.data || !response.data.data.play) {
+            return res.status(400).send("Video not found");
+        }
 
-        const audioStream = await axios({ method: 'get', url: audioLink, responseType: 'stream' });
-        audioStream.data.pipe(res);
+        const videoUrl = response.data.data.play;
+
+        // 1. تحميل الفيديو الأصلي مؤقتاً في السيرفر
+        const writer = fs.createWriteStream(inputPath);
+        const videoStream = await axios({ method: 'get', url: videoUrl, responseType: 'stream' });
+        videoStream.data.pipe(writer);
+
+        await new Promise((resolve, reject) => {
+            writer.on('finish', resolve);
+            writer.on('error', reject);
+        });
+
+        // 2. ضبط هيدرات التحميل الرسمي للأندرويد
+        res.setHeader('Content-Type', 'video/mp4');
+        res.setHeader('Content-Disposition', 'attachment; filename="tikswaft-muted.mp4"');
+
+        console.log("🎬 بدء كتم الصوت وضخه مباشرة كـ Stream للأندرويد...");
+
+        // 3. كتم الصوت والضخ المباشر عبر الـ Pipes (الأكثر استقراراً للموبايل)
+        ffmpeg(inputPath)
+            .outputOptions([
+                '-an',          // إلغاء مسار الصوت تماماً
+                '-c:v copy',    // نسخ الفيديو مباشرة بدون إعادة ترميز لتوفير الوقت
+                '-movflags frag_keyframe+empty_moov' // هيدر سحري يسمح بالتحميل المتدفق الفوري
+            ])
+            .toFormat('mp4')
+            .on('error', (err) => {
+                console.error('❌ خطأ في معالجة FFmpeg:', err.message);
+                cleanupFiles([inputPath, outputPath]);
+                if (!res.headersSent) res.status(500).send("Processing Error");
+            })
+            .on('end', () => {
+                console.log('✅ اكتملت العملية وتم إرسال الملف للهاتف بنجاح!');
+                // مسح الملف المؤقت بعد ثانية من انتهاء الإرسال
+                setTimeout(() => { cleanupFiles([inputPath, outputPath]); }, 5000);
+            })
+            .pipe(res, { end: true }); // ضخ النتيجة مباشرة لمدير تحميلات الهاتف
+
     } catch (error) {
-        if (!res.headersSent) res.status(500).send("Error fetching audio");
+        console.error("❌ خطأ عام في السيرفر:", error.message);
+        cleanupFiles([inputPath, outputPath]);
+        if (!res.headersSent) res.status(500).send("Server Error");
     }
 });
 
