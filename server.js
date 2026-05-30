@@ -174,7 +174,29 @@ app.get('/trim-video-direct', async (req, res) => {
             .pipe(res, { end: true });
     } catch (e) { cleanupFiles([inputPath]); if (!res.headersSent) res.status(500).send("Error"); }
 });
+// ==========================================================================
+// 📱 [بوابة تطبيق الهاتف] - مسار تحميل الصور الفردية المباشر (GET)
+// ==========================================================================
+app.get('/image-direct', async (req, res) => {
+    const { imageUrl, index } = req.query;
+    if (!imageUrl) return res.status(400).send("Image URL is required");
 
+    try {
+        console.log(`⏳ جاري جلب الصورة رقم ${index || 1}...`);
+
+        // ضبط هيدرات التحميل المباشر للأندرويد
+        res.setHeader('Content-Type', 'image/jpeg');
+        res.setHeader('Content-Disposition', `attachment; filename="tikswaft_img_${index || Date.now()}.jpg"`);
+
+        // سحب الصورة وضخها مباشرة لجهاز المستخدم
+        const imgRes = await axios({ method: 'get', url: imageUrl, responseType: 'stream' });
+        imgRes.data.pipe(res);
+
+    } catch (error) {
+        console.error("❌ خطأ في سيرفر تحميل الصور:", error.message);
+        if (!res.headersSent) res.status(500).send("Error fetching image");
+    }
+});
 // ==========================================
 // ⚙️ ختام الملف وتشغيل الخادم الشامل
 // ==========================================
