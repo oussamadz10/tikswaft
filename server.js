@@ -64,6 +64,31 @@ app.post('/mute-video', async (req, res) => {
     }
 });
 
+app.post('/trim-video', async (req, res) => {
+    const { tiktokUrl, startTime, duration } = req.body;
+    const inputPath = path.join(__dirname, `input_${Date.now()}.mp4`);
+    const outputPath = path.join(__dirname, `output_${Date.now()}.mp4`);
+    try {
+        const response = await axios.get(`https://www.tikwm.com/api/?url=${encodeURIComponent(tiktokUrl)}`);
+        const videoUrl = response.data.data.play;
+        const writer = fs.createWriteStream(inputPath);
+        const videoStream = await axios({ method: 'get', url: videoUrl, responseType: 'stream' });
+        videoStream.data.pipe(writer);
+        await new Promise((resolve, reject) => { writer.on('finish', resolve); writer.on('error', reject); });
+
+        ffmpeg(inputPath)
+            .setStartTime(parseInt(startTime))
+            .setDuration(parseInt(duration))
+            .outputOptions(['-c:v copy', '-c:a copy'])
+            .on('error', (err) => { cleanupFiles([inputPath, outputPath]); res.status(500).send("Error"); })
+            .on('end', () => { res.download(outputPath, 'tikswaft-trimmed.mp4', () => cleanupFiles([inputPath, outputPath])); })
+            .save(outputPath);
+    } catch (error) {
+        cleanupFiles([inputPath, outputPath]);
+        res.status(500).send("Server Error");
+    }
+});
+
 app.post('/process-audio', async (req, res) => {
     const { tiktokUrl } = req.body;
     try {
@@ -142,7 +167,72 @@ app.get('/audio-direct', async (req, res) => {
         if (!res.headersSent) res.status(500).send("Error fetching audio");
     }
 });
+// ==========================================================================
+// 📱 [بوابة تطبيق الهاتف] - مسار تحميل الفيديو الأصلي بدون علامة مائية
+// ==========================================================================
+app.get('/video-direct', async (req, res) => {
+    const { tiktokUrl } = req.query;
+    if (!tiktokUrl) return res.status(400).send("URL is required");
 
+    try {
+        console.log("⏳ جلب رابط الفيديو بدون علامة مائية...");
+        const response = await axios.get(`https://www.tikwm.com/api/?url=${encodeURIComponent(tiktokUrl)}`);
+
+        if (!response.data || !response.data.data || !response.data.data.play) {
+            return res.status(400).send("Video not found");
+        }
+
+        const cleanVideoUrl = response.data.data.play;
+
+        res.setHeader('Content-Type', 'video/mp4');
+        res.setHeader('Content-Disposition', 'attachment; filename="tikswaft_hd.mp4"');
+
+        const videoStream = await axios({ method: 'get', url: cleanVideoUrl, responseType: 'stream' });
+        videoStream.data.pipe(res);
+
+    } catch (error) {
+        console.error("❌ خطأ في سيرفر الفيديو النظيف:", error.message);
+        if (!res.headersSent) res.status(500).send("Error fetching video");
+    }
+});
+
+// ==========================================================================
+// 📱 [بوابة تطبيق الهاتف] - مسار قص الفيديو المباشر (Trim GET Stream)
+// ==========================================================================
+app.get('/trim-video-direct', async (req, res) => {
+    const { tiktokUrl, startTime, duration } = req.query;
+    if (!tiktokUrl || !startTime || !duration) return res.status(400).send("Missing parameters");
+
+    const uniqueId = Date.now();
+    const inputPath = path.join(__dirname, `input_trim_${uniqueId}.mp4`);
+    const outputPath = path.join(__dirname, `output_trim_${uniqueId}.mp4`);
+
+    try {
+        const response = await axios.get(`https://www.tikwm.com/api/?url=${encodeURIComponent(tiktokUrl)}`);
+        if (!response.data || !response.data.data || !response.data.data.play) return res.status(400).send("Video not found");
+
+        const videoUrl = response.data.data.play;
+        const writer = fs.createWriteStream(inputPath);
+        const videoStream = await axios({ method: 'get', url: videoUrl, responseType: 'stream' });
+        videoStream.data.pipe(writer);
+        await new Promise((resolve, reject) => { writer.on('finish', resolve); writer.on('error', reject); });
+
+        res.setHeader('Content-Type', 'video/mp4');
+        res.setHeader('Content-Disposition', 'attachment; filename="tikswaft_trimmed.mp4"');
+
+        ffmpeg(inputPath)
+            .setStartTime(parseInt(startTime))
+            .setDuration(parseInt(duration))
+            .outputOptions(['-c:v copy', '-c:a copy', '-movflags frag_keyframe+empty_moov'])
+            .toFormat('mp4')
+            .on('error', (err) => { cleanupFiles([inputPath, outputPath]); if (!res.headersSent) res.status(500).send("Trim Error"); })
+            .on('end', () => { setTimeout(() => { cleanupFiles([inputPath, outputPath]); }, 5000); })
+            .pipe(res, { end: true });
+    } catch (error) {
+        cleanupFiles([inputPath, outputPath]);
+        if (!res.headersSent) res.status(500).send("Server Error");
+    }
+});
 // ==========================================
 // ⚙️ تشغيل خادم الويب
 // ==========================================
