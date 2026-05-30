@@ -106,16 +106,49 @@ app.post('/download-image', async (req, res) => {
 // 📱 [بوابة تطبيق الهاتف - Android] - مسارات الـ GET المباشرة المستقلة 🚀
 // ==========================================================================
 
-app.get('/video-direct', async (req, res) => {
+// ==========================================================================
+// 📱 [بوابة تطبيق الهاتف] - مسار جلب وتحميل الفيديو الأصلي بدون علامة مائية (GET)
+// ==========================================================================
+app.get('/download-video', async (req, res) => {
     const { tiktokUrl } = req.query;
-    if (!tiktokUrl) return res.status(400).send("URL is required");
+
+    // التأكد من إرسال الرابط من الهاتف
+    if (!tiktokUrl) {
+        return res.status(400).send("URL is required");
+    }
+
     try {
+        console.log("⏳ جاري الاتصال بـ API وجلب رابط الفيديو النظيف...");
+
+        // جلب البيانات من السيرفر الوسيط لفك العلامة المائية
         const response = await axios.get(`https://www.tikwm.com/api/?url=${encodeURIComponent(tiktokUrl)}`);
+
+        // التحقق من أن الرابط سليم ويحتوي على فيديو
+        if (!response.data || !response.data.data || !response.data.data.play) {
+            return res.status(400).send("Video not found or link is invalid");
+        }
+
+        const cleanVideoUrl = response.data.data.play;
+
+        // 🚨 الهيدرات السحرية التي تجعل مدير تحميلات أندرويد يصطاد الملف ويحفظه فوراً
         res.setHeader('Content-Type', 'video/mp4');
         res.setHeader('Content-Disposition', 'attachment; filename="tikswaft_hd.mp4"');
-        const videoStream = await axios({ method: 'get', url: response.data.data.play, responseType: 'stream' });
+
+        // سحب بايتات الفيديو وضخها مباشرة (Pipe) إلى جهاز المستخدم
+        const videoStream = await axios({
+            method: 'get',
+            url: cleanVideoUrl,
+            responseType: 'stream'
+        });
+
         videoStream.data.pipe(res);
-    } catch (e) { if (!res.headersSent) res.status(500).send("Error"); }
+
+    } catch (error) {
+        console.error("❌ خطأ في سيرفر تحميل الفيديو للهاتف:", error.message);
+        if (!res.headersSent) {
+            res.status(500).send("Error fetching video");
+        }
+    }
 });
 
 app.get('/mute-video-direct', async (req, res) => {
