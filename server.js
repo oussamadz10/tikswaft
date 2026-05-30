@@ -170,7 +170,7 @@ app.get('/audio-direct', async (req, res) => {
 // ==========================================================================
 // 📱 [بوابة تطبيق الهاتف] - مسار تحميل الفيديو الأصلي بدون علامة مائية
 // ==========================================================================
-app.get('/video-direct', async (req, res) => {
+app.get('/download-video', async (req, res) => {
     const { tiktokUrl } = req.query;
     if (!tiktokUrl) return res.status(400).send("URL is required");
 
