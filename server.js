@@ -92,7 +92,7 @@ app.get('/audio-direct', async (req, res) => {
     } catch (e) { if (!res.headersSent) res.status(500).send("Error"); }
 });
 
-// 📱 5. مسار تحميل الصور الفردية المباشر
+
 app.get('/image-direct', async (req, res) => {
     const { imageUrl, index } = req.query;
     if (!imageUrl) return res.status(400).send("Image URL is required");
