@@ -184,11 +184,11 @@ app.get('/image-direct', async (req, res) => {
     try {
         console.log(`⏳ جاري جلب الصورة رقم ${index || 1}...`);
 
-        // ضبط هيدرات التحميل المباشر للأندرويد
+        // ضبط هيدرات التحميل المباشر ليفهمها الأندرويد ويحملها فورا
         res.setHeader('Content-Type', 'image/jpeg');
         res.setHeader('Content-Disposition', `attachment; filename="tikswaft_img_${index || Date.now()}.jpg"`);
 
-        // سحب الصورة وضخها مباشرة لجهاز المستخدم
+        // سحب الصورة وضخها مباشرة (Stream) كملف تحميل
         const imgRes = await axios({ method: 'get', url: imageUrl, responseType: 'stream' });
         imgRes.data.pipe(res);
 
