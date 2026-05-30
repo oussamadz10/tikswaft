@@ -11,14 +11,12 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
 
-// ضبط محرك FFmpeg (تلقائي بين Render والكمبيوتر المحلي)
-if (process.env.FFMPEG_PATH) {
-    ffmpeg.setFfmpegPath(process.env.FFMPEG_PATH);
-} else if (ffmpegInstaller.path) {
+// 🚀 التصحيح الذهبي لـ FFmpeg: ربط المسار التلقائي ليعمل على Render بدون أخطاء
+if (ffmpegInstaller.path) {
     ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 }
 
-// دالة مساعدة لحذف الملفات المؤقتة من السيرفر
+// دالة مساعدة لحذف الملفات المؤقتة
 function cleanupFiles(files) {
     files.forEach(file => {
         if (fs.existsSync(file)) {
@@ -28,65 +26,58 @@ function cleanupFiles(files) {
 }
 
 // ==========================================================================
-// 💻 [بوابة موقع الويب - Netlify] - مسارات الـ POST القديمة (آمنة ومحمية 100%)
+// 💻 [بوابة موقع الويب - Netlify] - مسارات الـ POST القديمة (آمنة ومحمية)
 // ==========================================================================
 
-app.post('/download-video', async (req, res) => {
-    const { tiktokUrl } = req.body;
+app.post('/process-video', async (req, res) => {
+    const { tiktokUrl, action, startTime, duration } = req.body;
+    if (!tiktokUrl) return res.status(400).send("URL is required");
+
+    const uniqueId = Date.now();
+    const inputPath = path.join(__dirname, `input_post_${uniqueId}.mp4`);
+    const outputPath = path.join(__dirname, `output_post_${uniqueId}.mp4`);
+
     try {
         const response = await axios.get(`https://www.tikwm.com/api/?url=${encodeURIComponent(tiktokUrl)}`);
-        const videoResponse = await axios({ method: 'get', url: response.data.data.play, responseType: 'stream', headers: { 'User-Agent': 'Mozilla/5.0' } });
-        res.setHeader('Content-Type', 'video/mp4');
-        res.setHeader('Content-Disposition', `attachment; filename="tikswaft_${Date.now()}.mp4"`);
-        videoResponse.data.pipe(res);
+        if (!response.data || !response.data.data || !response.data.data.play) return res.status(400).send("Video not found");
+
+        const videoUrl = response.data.data.play;
+        const writer = fs.createWriteStream(inputPath);
+        const videoStream = await axios({ method: 'get', url: videoUrl, responseType: 'stream' });
+        videoStream.data.pipe(writer);
+        await new Promise((resolve, reject) => { writer.on('finish', resolve); writer.on('error', reject); });
+
+        let ffCommand = ffmpeg(inputPath);
+
+        if (action === 'mute') {
+            ffCommand.outputOptions(['-an', '-c:v copy']);
+        } else if (action === 'trim') {
+            ffCommand.setStartTime(parseInt(startTime)).setDuration(parseInt(duration)).outputOptions(['-c:v copy', '-c:a copy']);
+        }
+
+        ffCommand.on('error', (err) => { cleanupFiles([inputPath, outputPath]); res.status(500).send("FFmpeg Error"); })
+            .on('end', () => { res.download(outputPath, 'tikswaft_processed.mp4', () => cleanupFiles([inputPath, outputPath])); })
+            .save(outputPath);
+
     } catch (error) {
-        res.status(500).send("فشل في تحميل الفيديو");
+        cleanupFiles([inputPath, outputPath]);
+        res.status(500).send("Server Error");
     }
 });
 
 app.post('/mute-video', async (req, res) => {
     const { tiktokUrl } = req.body;
-    const inputPath = path.join(__dirname, `input_${Date.now()}.mp4`);
-    const outputPath = path.join(__dirname, `output_${Date.now()}.mp4`);
+    const inputPath = path.join(__dirname, `input_m_${Date.now()}.mp4`);
+    const outputPath = path.join(__dirname, `output_m_${Date.now()}.mp4`);
     try {
         const response = await axios.get(`https://www.tikwm.com/api/?url=${encodeURIComponent(tiktokUrl)}`);
-        const videoUrl = response.data.data.play;
         const writer = fs.createWriteStream(inputPath);
-        const videoStream = await axios({ method: 'get', url: videoUrl, responseType: 'stream' });
-        videoStream.data.pipe(writer);
-        await new Promise((resolve, reject) => { writer.on('finish', resolve); writer.on('error', reject); });
+        await axios({ method: 'get', url: response.data.data.play, responseType: 'stream' }).then(r => r.data.pipe(writer));
+        await new Promise((resolve) => writer.on('finish', resolve));
 
-        ffmpeg(inputPath).outputOptions(['-an', '-c:v copy']).on('error', (err) => { cleanupFiles([inputPath, outputPath]); res.status(500).send("Error"); })
+        ffmpeg(inputPath).outputOptions(['-an', '-c:v copy']).on('error', () => { cleanupFiles([inputPath, outputPath]); res.status(500).send("Error"); })
             .on('end', () => { res.download(outputPath, 'tikswaft-muted.mp4', () => cleanupFiles([inputPath, outputPath])); }).save(outputPath);
-    } catch (error) {
-        cleanupFiles([inputPath, outputPath]);
-        res.status(500).send("Server Error");
-    }
-});
-
-app.post('/trim-video', async (req, res) => {
-    const { tiktokUrl, startTime, duration } = req.body;
-    const inputPath = path.join(__dirname, `input_${Date.now()}.mp4`);
-    const outputPath = path.join(__dirname, `output_${Date.now()}.mp4`);
-    try {
-        const response = await axios.get(`https://www.tikwm.com/api/?url=${encodeURIComponent(tiktokUrl)}`);
-        const videoUrl = response.data.data.play;
-        const writer = fs.createWriteStream(inputPath);
-        const videoStream = await axios({ method: 'get', url: videoUrl, responseType: 'stream' });
-        videoStream.data.pipe(writer);
-        await new Promise((resolve, reject) => { writer.on('finish', resolve); writer.on('error', reject); });
-
-        ffmpeg(inputPath)
-            .setStartTime(parseInt(startTime))
-            .setDuration(parseInt(duration))
-            .outputOptions(['-c:v copy', '-c:a copy'])
-            .on('error', (err) => { cleanupFiles([inputPath, outputPath]); res.status(500).send("Error"); })
-            .on('end', () => { res.download(outputPath, 'tikswaft-trimmed.mp4', () => cleanupFiles([inputPath, outputPath])); })
-            .save(outputPath);
-    } catch (error) {
-        cleanupFiles([inputPath, outputPath]);
-        res.status(500).send("Server Error");
-    }
+    } catch (e) { cleanupFiles([inputPath, outputPath]); res.status(500).send("Error"); }
 });
 
 app.post('/process-audio', async (req, res) => {
@@ -97,58 +88,56 @@ app.post('/process-audio', async (req, res) => {
         res.setHeader('Content-Type', 'audio/mpeg');
         res.setHeader('Content-Disposition', 'attachment; filename="tiktok_audio.mp3"');
         audioStream.data.pipe(res);
-    } catch (error) {
-        res.status(500).send("فشل في تحميل الصوت.");
-    }
+    } catch (e) { res.status(500).send("Error"); }
 });
 
 app.post('/download-image', async (req, res) => {
     const { imageUrl, index } = req.body;
     try {
-        const imageResponse = await axios({ method: 'get', url: imageUrl, responseType: 'stream', headers: { 'User-Agent': 'Mozilla/5.0' } });
+        const imgRes = await axios({ method: 'get', url: imageUrl, responseType: 'stream' });
         res.setHeader('Content-Type', 'image/jpeg');
         res.setHeader('Content-Disposition', `attachment; filename="tikswaft_img_${index}.jpg"`);
-        imageResponse.data.pipe(res);
-    } catch (error) {
-        res.status(500).send("Failed to download image");
-    }
+        imgRes.data.pipe(res);
+    } catch (e) { res.status(500).send("Error"); }
 });
 
+
 // ==========================================================================
-// 📱 [بوابة تطبيق الهاتف - Android] - مسارات الـ GET المباشرة المستقلة
+// 📱 [بوابة تطبيق الهاتف - Android] - مسارات الـ GET المباشرة المستقلة 🚀
 // ==========================================================================
+
+app.get('/video-direct', async (req, res) => {
+    const { tiktokUrl } = req.query;
+    if (!tiktokUrl) return res.status(400).send("URL is required");
+    try {
+        const response = await axios.get(`https://www.tikwm.com/api/?url=${encodeURIComponent(tiktokUrl)}`);
+        res.setHeader('Content-Type', 'video/mp4');
+        res.setHeader('Content-Disposition', 'attachment; filename="tikswaft_hd.mp4"');
+        const videoStream = await axios({ method: 'get', url: response.data.data.play, responseType: 'stream' });
+        videoStream.data.pipe(res);
+    } catch (e) { if (!res.headersSent) res.status(500).send("Error"); }
+});
 
 app.get('/mute-video-direct', async (req, res) => {
     const { tiktokUrl } = req.query;
     if (!tiktokUrl) return res.status(400).send("URL is required");
-
     const uniqueId = Date.now();
-    const inputPath = path.join(__dirname, `input_direct_${uniqueId}.mp4`);
-    const outputPath = path.join(__dirname, `output_direct_${uniqueId}.mp4`);
-
+    const inputPath = path.join(__dirname, `input_md_${uniqueId}.mp4`);
     try {
         const response = await axios.get(`https://www.tikwm.com/api/?url=${encodeURIComponent(tiktokUrl)}`);
-        if (!response.data || !response.data.data || !response.data.data.play) return res.status(400).send("Video not found");
-
-        const videoUrl = response.data.data.play;
         const writer = fs.createWriteStream(inputPath);
-        const videoStream = await axios({ method: 'get', url: videoUrl, responseType: 'stream' });
+        const videoStream = await axios({ method: 'get', url: response.data.data.play, responseType: 'stream' });
         videoStream.data.pipe(writer);
-        await new Promise((resolve, reject) => { writer.on('finish', resolve); writer.on('error', reject); });
+        await new Promise((resolve) => writer.on('finish', resolve));
 
         res.setHeader('Content-Type', 'video/mp4');
         res.setHeader('Content-Disposition', 'attachment; filename="tikswaft-muted.mp4"');
 
-        ffmpeg(inputPath)
-            .outputOptions(['-an', '-c:v copy', '-movflags frag_keyframe+empty_moov'])
-            .toFormat('mp4')
-            .on('error', (err) => { cleanupFiles([inputPath, outputPath]); if (!res.headersSent) res.status(500).send("Error"); })
-            .on('end', () => { setTimeout(() => { cleanupFiles([inputPath, outputPath]); }, 5000); })
+        ffmpeg(inputPath).outputOptions(['-an', '-c:v copy', '-movflags frag_keyframe+empty_moov']).toFormat('mp4')
+            .on('error', () => { cleanupFiles([inputPath]); if (!res.headersSent) res.status(500).send("Error"); })
+            .on('end', () => { setTimeout(() => { cleanupFiles([inputPath]); }, 5000); })
             .pipe(res, { end: true });
-    } catch (error) {
-        cleanupFiles([inputPath, outputPath]);
-        if (!res.headersSent) res.status(500).send("Server Error");
-    }
+    } catch (e) { cleanupFiles([inputPath]); if (!res.headersSent) res.status(500).send("Error"); }
 });
 
 app.get('/audio-direct', async (req, res) => {
@@ -156,85 +145,38 @@ app.get('/audio-direct', async (req, res) => {
     if (!tiktokUrl) return res.status(400).send("URL is required");
     try {
         const response = await axios.get(`https://www.tikwm.com/api/?url=${encodeURIComponent(tiktokUrl)}`);
-        if (!response.data.data || !response.data.data.music) return res.status(400).send("Audio not found");
-
         res.setHeader('Content-Type', 'audio/mpeg');
         res.setHeader('Content-Disposition', 'attachment; filename="tikswaft_audio.mp3"');
-
         const audioStream = await axios({ method: 'get', url: response.data.data.music, responseType: 'stream' });
         audioStream.data.pipe(res);
-    } catch (error) {
-        if (!res.headersSent) res.status(500).send("Error fetching audio");
-    }
-});
-// ==========================================================================
-// 📱 [بوابة تطبيق الهاتف] - مسار تحميل الفيديو الأصلي بدون علامة مائية
-// ==========================================================================
-app.get('/download-video', async (req, res) => {
-    const { tiktokUrl } = req.query;
-    if (!tiktokUrl) return res.status(400).send("URL is required");
-
-    try {
-        console.log("⏳ جلب رابط الفيديو بدون علامة مائية...");
-        const response = await axios.get(`https://www.tikwm.com/api/?url=${encodeURIComponent(tiktokUrl)}`);
-
-        if (!response.data || !response.data.data || !response.data.data.play) {
-            return res.status(400).send("Video not found");
-        }
-
-        const cleanVideoUrl = response.data.data.play;
-
-        res.setHeader('Content-Type', 'video/mp4');
-        res.setHeader('Content-Disposition', 'attachment; filename="tikswaft_hd.mp4"');
-
-        const videoStream = await axios({ method: 'get', url: cleanVideoUrl, responseType: 'stream' });
-        videoStream.data.pipe(res);
-
-    } catch (error) {
-        console.error("❌ خطأ في سيرفر الفيديو النظيف:", error.message);
-        if (!res.headersSent) res.status(500).send("Error fetching video");
-    }
+    } catch (e) { if (!res.headersSent) res.status(500).send("Error"); }
 });
 
-// ==========================================================================
-// 📱 [بوابة تطبيق الهاتف] - مسار قص الفيديو المباشر (Trim GET Stream)
-// ==========================================================================
 app.get('/trim-video-direct', async (req, res) => {
     const { tiktokUrl, startTime, duration } = req.query;
     if (!tiktokUrl || !startTime || !duration) return res.status(400).send("Missing parameters");
-
     const uniqueId = Date.now();
-    const inputPath = path.join(__dirname, `input_trim_${uniqueId}.mp4`);
-    const outputPath = path.join(__dirname, `output_trim_${uniqueId}.mp4`);
-
+    const inputPath = path.join(__dirname, `input_td_${uniqueId}.mp4`);
     try {
         const response = await axios.get(`https://www.tikwm.com/api/?url=${encodeURIComponent(tiktokUrl)}`);
-        if (!response.data || !response.data.data || !response.data.data.play) return res.status(400).send("Video not found");
-
-        const videoUrl = response.data.data.play;
         const writer = fs.createWriteStream(inputPath);
-        const videoStream = await axios({ method: 'get', url: videoUrl, responseType: 'stream' });
+        const videoStream = await axios({ method: 'get', url: response.data.data.play, responseType: 'stream' });
         videoStream.data.pipe(writer);
-        await new Promise((resolve, reject) => { writer.on('finish', resolve); writer.on('error', reject); });
+        await new Promise((resolve) => writer.on('finish', resolve));
 
         res.setHeader('Content-Type', 'video/mp4');
         res.setHeader('Content-Disposition', 'attachment; filename="tikswaft_trimmed.mp4"');
 
-        ffmpeg(inputPath)
-            .setStartTime(parseInt(startTime))
-            .setDuration(parseInt(duration))
-            .outputOptions(['-c:v copy', '-c:a copy', '-movflags frag_keyframe+empty_moov'])
-            .toFormat('mp4')
-            .on('error', (err) => { cleanupFiles([inputPath, outputPath]); if (!res.headersSent) res.status(500).send("Trim Error"); })
-            .on('end', () => { setTimeout(() => { cleanupFiles([inputPath, outputPath]); }, 5000); })
+        ffmpeg(inputPath).setStartTime(parseInt(startTime)).setDuration(parseInt(duration))
+            .outputOptions(['-c:v copy', '-c:a copy', '-movflags frag_keyframe+empty_moov']).toFormat('mp4')
+            .on('error', () => { cleanupFiles([inputPath]); if (!res.headersSent) res.status(500).send("Error"); })
+            .on('end', () => { setTimeout(() => { cleanupFiles([inputPath]); }, 5000); })
             .pipe(res, { end: true });
-    } catch (error) {
-        cleanupFiles([inputPath, outputPath]);
-        if (!res.headersSent) res.status(500).send("Server Error");
-    }
+    } catch (e) { cleanupFiles([inputPath]); if (!res.headersSent) res.status(500).send("Error"); }
 });
+
 // ==========================================
-// ⚙️ تشغيل خادم الويب
+// ⚙️ ختام الملف وتشغيل الخادم الشامل
 // ==========================================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => {
