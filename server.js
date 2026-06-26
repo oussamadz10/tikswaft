@@ -99,22 +99,33 @@ app.post('/download-image', async (req, res) => {
         res.setHeader('Content-Disposition', `attachment; filename="tikswaft_img_${index}.jpg"`);
         imgRes.data.pipe(res);
     } catch (e) { res.status(500).send("Error"); }
-});
-const { instagramGetUrl } = require('instagram-url-direct'); // السطر الجديد المحدث
-// تأكد أن الرابط هو نفس ما يستقبله الفونتد إيند
+});// استدعاء الحزمة بشكل مرن
+const instagramGetUrl = require('instagram-url-direct');
+
 app.post('/instagram-download', async (req, res) => {
     const { instagramUrl } = req.body;
     if (!instagramUrl) return res.status(400).json({ error: "Link required" });
 
     try {
-        let links = await instagramGetUrl(instagramUrl);
+        // فحص ذكي: إذا كانت الحزمة دالة مباشرة نستخدمها، وإذا كانت كائن نأخذ الدالة من داخله
+        const fetchFunction = typeof instagramGetUrl === 'function'
+            ? instagramGetUrl
+            : instagramGetUrl.instagramGetUrl;
+
+        if (!fetchFunction) {
+            throw new Error("Instagram function extraction failed");
+        }
+
+        // تشغيل الجلب بأمان
+        let links = await fetchFunction(instagramUrl);
+
         if (links && links.url_list && links.url_list.length > 0) {
             res.json({ videoUrl: links.url_list[0] });
         } else {
-            throw new Error("No media found");
+            throw new Error("No media found on this link");
         }
     } catch (error) {
-        console.error("Instagram Error:", error);
+        console.error("Instagram Control Error:", error);
         res.status(500).json({ error: "Failed to process link" });
     }
 });
