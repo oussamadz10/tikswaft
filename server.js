@@ -100,8 +100,7 @@ app.post('/download-image', async (req, res) => {
         imgRes.data.pipe(res);
     } catch (e) { res.status(500).send("Error"); }
 });
-const instagramGetUrl = require('instagram-url-direct');
-
+const { instagramGetUrl } = require('instagram-url-direct'); // السطر الجديد المحدث
 // تأكد أن الرابط هو نفس ما يستقبله الفونتد إيند
 app.post('/instagram-download', async (req, res) => {
     const { instagramUrl } = req.body;
