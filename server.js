@@ -100,7 +100,6 @@ app.post('/download-image', async (req, res) => {
         imgRes.data.pipe(res);
     } catch (e) { res.status(500).send("Error"); }
 });
-const instagramGetUrl = require('instagram-url-direct');
 
 app.post('/instagram-download', async (req, res) => {
     const { instagramUrl } = req.body;
