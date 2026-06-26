@@ -100,30 +100,25 @@ app.post('/download-image', async (req, res) => {
         imgRes.data.pipe(res);
     } catch (e) { res.status(500).send("Error"); }
 });
+const instagramGetUrl = require('instagram-url-direct');
 
+// تأكد أن الرابط هو نفس ما يستقبله الفونتد إيند
 app.post('/instagram-download', async (req, res) => {
     const { instagramUrl } = req.body;
     if (!instagramUrl) return res.status(400).json({ error: "Link required" });
 
     try {
-        // المكتبة تقوم بفك وحل الرابط مباشرة من خوادم إنستغرام عبر سيرفرك
         let links = await instagramGetUrl(instagramUrl);
-
-        // التحقق من وجود روابط ميديا مستخرجة
         if (links && links.url_list && links.url_list.length > 0) {
-            const directVideoUrl = links.url_list[0]; // الرابط المباشر لملف الـ MP4
-
-            res.json({ videoUrl: directVideoUrl });
+            res.json({ videoUrl: links.url_list[0] });
         } else {
-            throw new Error("No media found on this link");
+            throw new Error("No media found");
         }
     } catch (error) {
-        console.error("Backend Instagram Error:", error);
-        res.status(500).json({ error: "Failed to process Instagram link directly" });
+        console.error("Instagram Error:", error);
+        res.status(500).json({ error: "Failed to process link" });
     }
 });
-
-
 // ==========================================================================
 // 📱 [بوابة تطبيق الهاتف - Android] - مسارات الـ GET المباشرة المستقلة 🚀
 // ==========================================================================
