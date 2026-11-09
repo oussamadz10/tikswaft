@@ -252,7 +252,7 @@ function sendError(res, err, asHtml) {
         const safe = msg.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
         return res.status(status).type('html').send(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>Download error</title><body style="background:#0b0b0e;color:#fff;font-family:Arial,sans-serif;text-align:center;padding:60px 20px"><h2>Download failed</h2><p style="color:#bbb">${safe}</p><p><a style="color:#25f4ee" href="javascript:history.back()">Go back</a></p></body>`);
     }
-    res.status(status).json({ success: false, error: msg });
+    res.status(status).json({ success: false, error: msg, detail: err.detail || (err.status ? undefined : String(err.message || '').slice(0, 400)) });
 }
 
 // ---------- routes ----------
