@@ -2,3 +2,4 @@
 *.sqlite
 *.vsidx
 node_modules/
+bin/
