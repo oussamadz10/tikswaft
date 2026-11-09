@@ -128,7 +128,13 @@ async function getVideoFile(info, item, dir, { quality, videoOnly, section } = {
             const extra = [...formatFor(quality, videoOnly)];
             if (info.media.length > 1 && info.platform === 'instagram') extra.push('--playlist-items', String(item.index + 1));
             if (section) extra.push('--download-sections', `*${section.start}-${section.start + section.duration}`);
-            return await ytdlp.downloadTo(target, info.platform, dir, extra);
+            try {
+                return await ytdlp.downloadTo(target, info.platform, dir, extra);
+            } catch (e) {
+                if (info.platform !== 'youtube') throw e;
+                errors.push(e);
+                return await ytdlp.downloadTo(target, info.platform, dir, [...extra, '--extractor-args', 'youtube:player_client=tv,web_safari,mweb,android_vr']);
+            }
         } catch (e) {
             errors.push(e);
         }
@@ -273,6 +279,7 @@ router.post('/info', async (req, res) => {
             thumbnail: info.thumbnail,
             duration: info.duration,
             warning: info.error || null,
+            detail: info.detail || undefined,
             media: info.media.map((m) => ({
                 index: m.index, type: m.type, thumbnail: m.thumbnail || info.thumbnail,
                 width: m.width || null, height: m.height || null, duration: m.duration || null,
