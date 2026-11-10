@@ -30,7 +30,7 @@ const MAX_VIDEO_SECONDS = Number(process.env.MAX_VIDEO_SECONDS || 3600);   // 1 
 const MAX_AUDIO_SECONDS = Number(process.env.MAX_AUDIO_SECONDS || 3 * 3600);
 const MAX_TRIM_SECONDS = Number(process.env.MAX_TRIM_SECONDS || 600);
 const FILE_TTL_MS = 20 * 60 * 1000;
-const PREFIX = { youtube: 'youswaft', instagram: 'inswaft', facebook: 'faceswaft', x: 'xswaft', pinterest: 'pinswaft' };
+const PREFIX = { youtube: 'youswaft', instagram: 'inswaft', facebook: 'faceswaft', x: 'xswaft', pinterest: 'pinswaft', xiaohongshu: 'redswaft' };
 
 // ---------- small job queue (free Render instance: keep heavy work limited) ----------
 const MAX_JOBS = Number(process.env.MAX_JOBS || 2);
@@ -186,7 +186,9 @@ async function prepare(body) {
                 filename = base + '_thumbnail.jpg';
             } else if (type === 'image') {
                 if (item.type !== 'image' || !item.url) throw badRequest('This item is not an image');
-                const r = await fetchToFile(item.url, path.join(dir, 'image'), info.url);
+                let r;
+                try { r = await fetchToFile(item.url, path.join(dir, 'image'), info.url); }
+                catch (e) { if (!item.altUrl) throw e; r = await fetchToFile(item.altUrl, path.join(dir, 'image'), info.url); }
                 const ext = /png/.test(r.contentType) ? 'png' : /webp/.test(r.contentType) ? 'webp' : 'jpg';
                 file = path.join(dir, 'image.' + ext);
                 fs.renameSync(r.file, file);
