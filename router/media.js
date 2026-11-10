@@ -72,7 +72,7 @@ setInterval(() => {
 // ---------- helpers ----------
 function slug(text, fallback) {
     const s = String(text || '').normalize('NFKD').replace(/[̀-ͯ]/g, '')
-        .replace(/https?:\/\/\S+/g, '').replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '_').slice(0, 60);
+        .replace(/https?:\/\/\S+/g, '').replace(/[^\p{L}\p{N}_\s-]/gu, '').trim().replace(/\s+/g, '_').slice(0, 50);
     return s || fallback;
 }
 
