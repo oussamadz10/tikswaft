@@ -30,7 +30,7 @@ const MAX_VIDEO_SECONDS = Number(process.env.MAX_VIDEO_SECONDS || 3600);   // 1 
 const MAX_AUDIO_SECONDS = Number(process.env.MAX_AUDIO_SECONDS || 3 * 3600);
 const MAX_TRIM_SECONDS = Number(process.env.MAX_TRIM_SECONDS || 600);
 const FILE_TTL_MS = 20 * 60 * 1000;
-const PREFIX = { youtube: 'youswaft', instagram: 'inswaft', facebook: 'faceswaft', x: 'xswaft', pinterest: 'pinswaft', xiaohongshu: 'redswaft' };
+const PREFIX = { youtube: 'youswaft', instagram: 'inswaft', facebook: 'faceswaft', x: 'xswaft', pinterest: 'pinswaft', xiaohongshu: 'redswaft', tiktok: 'tikswaft' };
 
 // ---------- small job queue (free Render instance: keep heavy work limited) ----------
 const MAX_JOBS = Number(process.env.MAX_JOBS || 2);
@@ -195,9 +195,15 @@ async function prepare(body) {
                 filename = `${base}_${index + 1}.${ext}`;
             } else if (type === 'audio') {
                 if (duration > MAX_AUDIO_SECONDS) throw badRequest('This audio is too long (max ' + Math.round(MAX_AUDIO_SECONDS / 60) + ' minutes).');
-                if (item.type === 'image') throw badRequest('This post is a photo, it has no audio.');
-                let ok = false;
-                if (info.engine === 'ytdlp' || info.engine === 'none') {
+                if (info.audioUrl) {
+                    try {
+                        file = (await fetchToFile(info.audioUrl, path.join(dir, 'audio.mp3'), info.url)).file;
+                        filename = base + '.mp3';
+                    } catch (e) { file = null; }
+                }
+                if (!file && item.type === 'image') throw badRequest('This post is a photo, it has no audio.');
+                let ok = !!file;
+                if (!ok && (info.engine === 'ytdlp' || info.engine === 'none')) {
                     try {
                         const extra = ['-f', 'ba/b', '-x', '--audio-format', 'mp3', '--audio-quality', '192K'];
                         if (info.media.length > 1 && info.platform === 'instagram') extra.push('--playlist-items', String(index + 1));
@@ -282,6 +288,7 @@ router.post('/info', async (req, res) => {
             duration: info.duration,
             warning: info.error || null,
             detail: info.detail || undefined,
+            hasAudio: !!info.audioUrl || info.media.some((m) => m.type === 'video'),
             media: info.media.map((m) => ({
                 index: m.index, type: m.type, thumbnail: m.thumbnail || info.thumbnail,
                 width: m.width || null, height: m.height || null, duration: m.duration || null,
