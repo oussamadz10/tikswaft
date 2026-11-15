@@ -17,7 +17,8 @@ const crypto = require('crypto');
 const ffmpeg = require('fluent-ffmpeg');
 
 const ytdlp = require('../lib/ytdlp');
-const { resolve, friendlyError, youtubeId, BROWSER_UA } = require('../lib/resolvers');
+const { resolve, friendlyError, youtubeId, BROWSER_UA, detectPlatform } = require('../lib/resolvers');
+const worker = require('../lib/worker');
 
 if (ytdlp.ffmpegPath) ffmpeg.setFfmpegPath(ytdlp.ffmpegPath);
 
@@ -273,10 +274,26 @@ function sendError(res, err, asHtml) {
 router.get('/health', async (req, res) => {
     let ytdlpReady = false;
     try { await ytdlp.ensureYtDlp(); ytdlpReady = true; } catch (e) { /* not ready */ }
-    res.json({ success: true, ytdlp: ytdlpReady, warp: ytdlp.warpStatus(), jobs: running, queued: waiting.length });
+    res.json({ success: true, ytdlp: ytdlpReady, isWorker: worker.IS_WORKER, worker: worker.status(), warp: ytdlp.warpStatus(), jobs: running, queued: waiting.length });
+});
+
+// YouTube goes to the home worker while it is online (see lib/worker.js)
+async function viaWorker(req, res, path) {
+    const url = String((req.body && req.body.url) || '');
+    if (detectPlatform(url) !== 'youtube' || !worker.active()) return false;
+    const r = await worker.forward(path, req.body);
+    if (!r) return false;
+    res.status(r.status).json(r.data);
+    return true;
+}
+
+router.post('/worker/register', (req, res) => {
+    try { res.json(worker.register(req.body || {})); }
+    catch (e) { res.status(e.status || 500).json({ success: false, error: e.message }); }
 });
 
 router.post('/info', async (req, res) => {
+    if (await viaWorker(req, res, '/api/media/info')) return;
     try {
         const info = await resolve(String((req.body && req.body.url) || ''));
         res.json({
@@ -300,6 +317,7 @@ router.post('/info', async (req, res) => {
 
 router.post('/prepare', async (req, res) => {
     req.setTimeout(20 * 60000);
+    if (await viaWorker(req, res, '/api/media/prepare')) return;
     try {
         const r = await prepare(req.body || {});
         res.json({ success: true, downloadUrl: '/api/media/file/' + r.token, filename: r.filename, size: r.size });
@@ -314,6 +332,10 @@ router.get('/file/:token', (req, res) => {
 
 router.get('/direct', async (req, res) => {
     req.setTimeout(20 * 60000);
+    const base = worker.active();
+    if (base && detectPlatform(String(req.query.url || '')) === 'youtube') {
+        return res.redirect(302, base + req.originalUrl);
+    }
     try {
         const r = await prepare(req.query || {});
         const f = files.get(r.token);
