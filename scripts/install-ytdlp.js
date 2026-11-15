@@ -3,6 +3,7 @@
 const { installBinary } = require('../lib/ytdlp');
 
 installBinary()
+    .then(() => require('../lib/warp').install().catch((e) => console.warn('[warp] postinstall skipped: ' + e.message)))
     .then(() => process.exit(0))
     .catch((e) => {
         console.warn('[yt-dlp] postinstall download failed, will retry at runtime: ' + e.message);

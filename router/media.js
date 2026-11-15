@@ -273,7 +273,7 @@ function sendError(res, err, asHtml) {
 router.get('/health', async (req, res) => {
     let ytdlpReady = false;
     try { await ytdlp.ensureYtDlp(); ytdlpReady = true; } catch (e) { /* not ready */ }
-    res.json({ success: true, ytdlp: ytdlpReady, jobs: running, queued: waiting.length });
+    res.json({ success: true, ytdlp: ytdlpReady, warp: ytdlp.warpStatus(), jobs: running, queued: waiting.length });
 });
 
 router.post('/info', async (req, res) => {
