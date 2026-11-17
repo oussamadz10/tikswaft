@@ -87,19 +87,36 @@ function toSeconds(v) {
 }
 
 async function fetchToFile(url, dest, referer) {
-    const res = await axios({
-        method: 'get', url, responseType: 'stream', timeout: 60000, maxRedirects: 10,
-        headers: { 'User-Agent': BROWSER_UA, ...(referer ? { Referer: referer } : {}) }
-    });
-    await new Promise((ok, fail) => {
-        const out = fs.createWriteStream(dest);
-        res.data.pipe(out);
-        out.on('finish', ok);
-        out.on('error', fail);
-        res.data.on('error', fail);
-    });
-    if (!fs.statSync(dest).size) throw new Error('Downloaded file is empty');
-    return { file: dest, contentType: res.headers['content-type'] || '' };
+    // Some CDNs refuse a foreign Referer (403); retry without it, then with the CDN's own origin
+    let origin = null;
+    try { origin = new URL(url).origin + '/'; } catch (e) { /* bad url */ }
+    const refs = [referer, null, origin].filter((r, i, a) => a.indexOf(r) === i);
+    let lastErr;
+    for (const ref of refs) {
+        try {
+            const res = await axios({
+                method: 'get', url, responseType: 'stream', timeout: 60000, maxRedirects: 10,
+                headers: { 'User-Agent': BROWSER_UA, 'Accept': '*/*', ...(ref ? { Referer: ref } : {}) }
+            });
+            await new Promise((ok, fail) => {
+                const out = fs.createWriteStream(dest);
+                res.data.pipe(out);
+                out.on('finish', ok);
+                out.on('error', fail);
+                res.data.on('error', fail);
+            });
+            if (!fs.statSync(dest).size) throw new Error('Downloaded file is empty');
+            return { file: dest, contentType: res.headers['content-type'] || '' };
+        } catch (e) {
+            lastErr = e;
+            const st = e.response && e.response.status;
+            if (st && st !== 403 && st !== 401) break;   // only a refusal is worth another try
+        }
+    }
+    let host = '';
+    try { host = new URL(url).host; } catch (e) { /* ignore */ }
+    lastErr.message = lastErr.message + ' (' + host + ')';
+    throw lastErr;
 }
 
 function runFfmpeg(input, output, configure) {
@@ -141,14 +158,20 @@ async function getVideoFile(info, item, dir, { quality, videoOnly, section } = {
         }
     }
     if (item.url) {
-        try {
-            return (await fetchToFile(item.url, path.join(dir, 'source.mp4'), info.url)).file;
-        } catch (e) {
-            if (item.sdUrl && item.sdUrl !== item.url) return (await fetchToFile(item.sdUrl, path.join(dir, 'source.mp4'), info.url)).file;
-            errors.push(e);
+        for (const u of [item.url, item.sdUrl].filter((x, i, a) => x && a.indexOf(x) === i)) {
+            try { return (await fetchToFile(u, path.join(dir, 'source.mp4'), info.url)).file; }
+            catch (e) { errors.push(e); }
+        }
+        // Direct link refused: let yt-dlp fetch the post itself
+        if (info.engine !== 'ytdlp' && ['tiktok', 'facebook', 'instagram', 'x', 'pinterest'].includes(info.platform)) {
+            try { return await ytdlp.downloadTo(item.pageUrl || info.url, info.platform, dir, [...formatFor(quality, videoOnly)]); }
+            catch (e) { errors.push(e); }
         }
     }
-    throw new Error(friendlyError(errors[0] && errors[0].message, info.platform));
+    console.warn('[media] ' + info.platform + ' download failed: ' + errors.map((e) => e.message).join(' | ').slice(0, 500));
+    const err = new Error(friendlyError(errors[0] && errors[0].message, info.platform));
+    err.detail = errors.map((e) => e.message).join(' | ').slice(0, 300);
+    throw err;
 }
 
 async function prepare(body) {
