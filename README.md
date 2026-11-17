@@ -1,6 +1,6 @@
 # TikSwaft – free video & photo downloader API
 
-Backend of **[TikSwaft](https://tikswaft.com/)**, a free online downloader for TikTok, YouTube, Instagram, Facebook, X (Twitter), Pinterest, Snapchat and RedNote (Xiaohongshu). It saves videos without watermark as MP4, converts them to MP3, and downloads photos in original quality.
+Backend of **[TikSwaft](https://tikswaft.com/)**, a free online downloader for TikTok, YouTube, Instagram, Facebook, X (Twitter), Pinterest, Snapchat, Threads and RedNote (Xiaohongshu). It saves videos without watermark as MP4, converts them to MP3, and downloads photos in original quality.
 
 ## Online tools
 
@@ -13,6 +13,7 @@ Backend of **[TikSwaft](https://tikswaft.com/)**, a free online downloader for T
 | X (Twitter) | [Twitter Video & GIF Downloader](https://tikswaft.com/xswaft/xswaft) |
 | Pinterest | [Pinterest Video & Image Downloader](https://tikswaft.com/pinswaft/pinswaft) |
 | Snapchat | [Snapchat Video Downloader](https://tikswaft.com/snapswaft/snapswaft) |
+| Threads | [Threads Video & Photo Downloader](https://tikswaft.com/threadswaft/threadswaft) |
 | RedNote / 小红书 | [RedNote Downloader without watermark](https://tikswaft.com/redswaft/redswaft) |
 
 ## How it works

@@ -31,7 +31,7 @@ const MAX_VIDEO_SECONDS = Number(process.env.MAX_VIDEO_SECONDS || 3600);   // 1 
 const MAX_AUDIO_SECONDS = Number(process.env.MAX_AUDIO_SECONDS || 3 * 3600);
 const MAX_TRIM_SECONDS = Number(process.env.MAX_TRIM_SECONDS || 600);
 const FILE_TTL_MS = 20 * 60 * 1000;
-const PREFIX = { youtube: 'youswaft', instagram: 'inswaft', facebook: 'faceswaft', x: 'xswaft', pinterest: 'pinswaft', xiaohongshu: 'redswaft', tiktok: 'tikswaft', snapchat: 'snapswaft' };
+const PREFIX = { youtube: 'youswaft', instagram: 'inswaft', facebook: 'faceswaft', x: 'xswaft', pinterest: 'pinswaft', xiaohongshu: 'redswaft', tiktok: 'tikswaft', snapchat: 'snapswaft', threads: 'threadswaft' };
 
 // ---------- small job queue (free Render instance: keep heavy work limited) ----------
 const MAX_JOBS = Number(process.env.MAX_JOBS || 2);
